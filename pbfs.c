@@ -1,4 +1,3 @@
-
 // Parallel Breadth First Search
 // -----------------------------
 // Berforms a BFS starting from vertex 1
@@ -20,8 +19,44 @@
 // Note that the vertices are numbered from 1 to n (inclusive). Thus there is
 // no vertex 0.
 
-void pbfs(int n,int *ver,int *edges,int *p,int *dist,int *S,int *T) {
+void pbfs(int n,int *ver,int *edges,int *p,int *dist,int *S,int *T) 
+{
+    // Write code here
+    int i, j;
+    int v, w;
+    int num_r, num_w;
+    int *temp;
 
-// Write code here
+    // set all parents and distances to -1
+    for (i = 1; i <= n; i++) {
+        p[i] = -1;
+        dist[i] = -1;
+    }
 
+    p[1] = 1;
+    dist[1] = 0;
+    S[0] = 1;
+
+    num_r = 1;
+    num_w = 0;
+
+    while (num_r != 0) {
+        for (i = 0; i < num_r; i++) {
+            v = S[i];
+            for (j = ver[v]; j < ver[v+1]; j++) {
+                w = edges[j];
+                if (p[w] == -1) {
+                    p[w] = v;
+                    dist[w] = dist[v] +1;
+                    T[num_w++] = w;
+                }
+            }
+        }
+        temp = S;
+        S = T;
+        T = temp;
+        num_r = num_w;
+        num_w = 0;
+    }
 }
+
