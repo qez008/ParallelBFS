@@ -1,5 +1,6 @@
-x = [1 20 ];
-name = {'/export/data/fredrikm/inf236/graphs/delaunay_n24' };
-n = [16777216 ];
-nz = [50331601 ];
-TimeSequentialBFS = [1.561404 ];
+x = [1 2 ];
+name = {'/export/data/fredrikm/inf236/smallGraphs/test' };
+n = [4 ];
+nz = [4 ];
+TimeSequentialBFS = [0.000004 ];
+TimeParallelBFS = [0.000098 0.000102 ];

@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
     // Only the algorithms where the boolean value is set to true are run
     //
     int BFS               = true;    /* Sequential BFS */
-    int PBFS              = false;   /* Parallel BFS */
+    int PBFS              = true;    /* Parallel BFS */
     int ABFS              = false;   /* Alternative Parallel BFS */
 
     // Read input and check that it is in order

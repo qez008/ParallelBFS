@@ -19,44 +19,75 @@
 // Note that the vertices are numbered from 1 to n (inclusive). Thus there is
 // no vertex 0.
 
-void pbfs(int n,int *ver,int *edges,int *p,int *dist,int *S,int *T) 
+void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
 {
     // Write code here
+    // use T for prefix sum and other shared values
+
     int i, j;
     int v, w;
     int num_r, num_w;
     int *temp;
 
-    // set all parents and distances to -1
-    for (i = 1; i <= n; i++) {
-        p[i] = -1;
-        dist[i] = -1;
+
+    num_r = 1; // elements in queue
+    num_w = 0; // elements added to next queue
+
+
+    // moved num_r to first index in S
+    // moved num_w to second index in S
+
+    int offset = 2;
+#pragma omp master
+    {
+        S[offset] = S[0];
+        S[0] = 1;
     }
 
-    p[1] = 1;
-    dist[1] = 0;
-    S[0] = 1;
+#pragma omp master
+    {
+        for (i = 1; i <= n; i++) {
+            p[i] = -1;
+            dist[i] = -1;
+        }
 
-    num_r = 1;
-    num_w = 0;
+        p[1] = 1;
+        dist[1] = 0;
+        S[offset] = 1;
 
-    while (num_r != 0) {
-        for (i = 0; i < num_r; i++) {
-            v = S[i];
+
+    }
+
+    // wait for master to finish
+
+#pragma omp barrier
+
+#pragma omp master 
+    while (S[0] != 0) {
+        printf("exploring ");
+        for (i = 0; i < S[0]; i++) { // explore the current queue
+            v = S[i + offset];
+            printf("%d ", v);
             for (j = ver[v]; j < ver[v+1]; j++) {
                 w = edges[j];
-                if (p[w] == -1) {
+                if (p[w] == -1) { // add unvisited nodes to the next queue
                     p[w] = v;
                     dist[w] = dist[v] +1;
-                    T[num_w++] = w;
+                    T[offset + T[0]++] = w;
                 }
             }
         }
+        printf("\n");
         temp = S;
         S = T;
         T = temp;
-        num_r = num_w;
-        num_w = 0;
+        T[0] = 0;
+        printf("queue: ");
+        for (i = 0; i < S[0]; i++) printf("%d ", S[i + offset]);
+        printf("\n");
     }
+
+#pragma omp barrier
+
 }
 
