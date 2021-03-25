@@ -19,9 +19,20 @@
 // Note that the vertices are numbered from 1 to n (inclusive). Thus there is
 // no vertex 0.
 
+
+void alt1(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T);
+void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T);
+
+void show(int* arr, int size);
+
+
 void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
 {
+    alt2(n, ver, edges, p, dist, S, T);
+    return;
+
     // Write code here
+    int debug = 0;
 
     int iteration;
 
@@ -76,7 +87,7 @@ void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
 
             // explore v's edges
 
-            printf("thread %d exploring %d \n", t, v);
+            if (debug) printf("thread %d exploring %d \n", t, v);
 
             for (j = ver[v]; j < ver[v+1]; j++) {
                 w = edges[j];
@@ -99,14 +110,19 @@ void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
 
 #pragma omp critical
             {
-                printf("thread %d found: ", t);
-                show(local_T, local_counter);
+                if (debug) {
+                    printf("thread %d found: ", t);
+                    show(local_T, local_counter);
+                }
             }
-        }
+
+        } // end parallel for
+
+        // wait for all threads to finish
 
 #pragma omp barrier
 
-        // all vertieces in S have been moved to private Ts
+        // all vertieces in S have been moved to local Ts
 
         // do the prefix sums to find out where each thread may place elements
         // and find the total size of the next S
@@ -131,13 +147,12 @@ void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
 #pragma omp barrier
 
 
-        // each thread moves its elements to S
+        // each thread moves its elements to S from its local T
 
         // printf("thread %d counter: %d\n", t, local_counter);
 
 #pragma omp for
         for (i = 0; i < ts; i++) {
-
 
             k = T[i + offset] - local_counter;
 
@@ -146,22 +161,25 @@ void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
             }
 
             // reset counter in T
-            
+
             T[i + offset] = 0;
 
-        }
+        } // end parallel for
 
 #pragma omp barrier
 #pragma omp single
-
         {
-
-            printf("queue: ");
-            show(S, T[0]);
+            if (debug) {
+                printf("queue: ");
+                show(S, T[0]);
+                printf("---\n");
+            }
 
         }
 #pragma omp barrier
-        if (iteration == 3) {
+        if (debug && iteration == 10) {
+#pragma omp single
+            { printf("returned after %d iterations\n", iteration); }
             return;
         }
     }
@@ -169,6 +187,179 @@ void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     free(local_T);
 
 #pragma omp barrier
+
+}
+
+
+
+void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
+{
+    int i, j, k, t;
+    int v, w;
+    int *temp;
+
+    int threads;
+    threads = omp_get_num_threads();
+
+    int offset;
+
+    offset = 2;
+
+    int local_counter;
+    int *local_T;
+
+    local_T = (int*) malloc(n * sizeof(int));
+
+#pragma omp single
+    {
+        printf("--alt2--\n");
+
+        for (i = 1; i <= n; i++) {
+            p[i] = -1;
+            dist[i] = -1;
+        }
+
+        p[1] = 1;
+        dist[1] = 0;
+        S[offset] = 1;
+
+        S[0] = 1;
+        S[1] = 0;
+    }
+
+
+    while (S[0] != 0) {
+
+        local_counter = 0;
+
+#pragma omp for
+        for (i = 0; i < S[0]; i++) {
+            v = S[offset + i];
+            for (j = ver[v]; j < ver[v+1]; j++) {
+                w = edges[j];
+                if (p[w] == -1) {
+                    p[w] = v;
+                    dist[w] = dist[v] + 1;
+                    local_T[local_counter++] = w;
+                }
+            }
+            T[offset + omp_get_thread_num()] = local_counter;
+        }
+
+#pragma omp barrier
+
+#pragma omp single
+        {
+            // find the next size of S
+
+            T[1] = 0;
+            for (t = 0; t < threads; t++) {
+                T[1] += T[offset + t];
+            }
+
+            S[0] = T[1];
+
+            // prefix sum last index for each thread
+
+            for (t = 1; t < threads; t++) {
+                T[offset + t] += T[offset + t - 1];
+            }
+
+        }
+
+        // finally each thread moves elements from local T to S
+
+#pragma omp for
+        for (t = 0; t < threads; t++) {
+
+            // find start index for thread t
+
+            k = T[offset + t] - local_counter;
+            for (i = 0; i < local_counter; i++) {
+                S[offset + k++] = local_T[i];
+            }
+
+            // reset local counter in T
+
+            T[offset + t] = 0;
+        }
+#pragma omp barrier
+
+    } // end while
+
+
+    free(local_T);
+}
+
+
+
+// regular bfs exectued by first arriving thread 
+void alt1(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
+{
+    int i, j, k;
+    int v, w;
+    int *temp;
+
+    int offset;
+
+    offset = 2;
+
+    int local_counter;
+    int *local_T;
+
+    local_T = (int*) malloc(n * sizeof(int));
+
+#pragma omp single
+    {
+        printf("--alt1--\n");
+        printf("thread %d resetting\n", omp_get_thread_num());
+
+        for (i = 1; i <= n; i++) {
+            p[i] = -1;
+            dist[i] = -1;
+        }
+
+        p[1] = 1;
+        dist[1] = 0;
+        S[offset] = 1;
+
+        S[0] = 1;
+        S[1] = 0;
+
+    }
+
+#pragma omp single
+    {
+        printf("thread %d running bfs\n", omp_get_thread_num());
+
+        while (S[0] != 0) {
+
+            local_counter = 0;
+
+            for (i = 0; i < S[0]; i++) {
+                v = S[offset + i];
+                for (j = ver[v]; j < ver[v+1]; j++) {
+                    w = edges[j];
+                    if (p[w] == -1) {
+                        p[w] = v;
+                        dist[w] = dist[v] + 1;
+                        local_T[local_counter++] = w;
+                    }
+                }
+            }
+
+            T[1] = local_counter;
+            for (i = 0; i < local_counter; i++) {
+                T[offset + i] = local_T[i];
+            }
+
+            T[0] = T[1];
+            T[1] = 0;
+            temp = S;
+            S = T;
+            T = temp;
+        }
+    }
 }
 
 
