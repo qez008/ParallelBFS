@@ -22,29 +22,28 @@
 void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
 {
     // Write code here
-    // use T for prefix sum and other shared values
 
-    int i, j;
+    int iteration;
+
+    int i, j, k;
     int v, w;
-    int num_r, num_w;
     int *temp;
+    int t, ts;
 
+    t = omp_get_thread_num();
+    ts = omp_get_num_threads();
 
-    num_r = 1; // elements in queue
-    num_w = 0; // elements added to next queue
+    int local_counter;
+    int *local_T;
 
+    int offset;
 
-    // moved num_r to first index in S
-    // moved num_w to second index in S
+    offset = 2; // number of indices in T used for shared variables
 
-    int offset = 2;
-#pragma omp master
-    {
-        S[offset] = S[0];
-        S[0] = 1;
-    }
+    local_T = (int*) malloc(n * sizeof(int));
 
-#pragma omp master
+#pragma omp single
+
     {
         for (i = 1; i <= n; i++) {
             p[i] = -1;
@@ -53,41 +52,131 @@ void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
 
         p[1] = 1;
         dist[1] = 0;
-        S[offset] = 1;
 
 
+        T[0] = 1;
+        T[1] = 0;
+
+        S[0] = 1;
     }
 
-    // wait for master to finish
 
 #pragma omp barrier
 
-#pragma omp master 
-    while (S[0] != 0) {
-        printf("exploring ");
-        for (i = 0; i < S[0]; i++) { // explore the current queue
-            v = S[i + offset];
-            printf("%d ", v);
+    while (T[0] != 0) {
+
+        iteration++;
+        local_counter = 0;
+
+        // divide vertices between threads
+
+#pragma omp for
+        for (i = 0; i < T[0]; i++ ) {
+            v = S[i];
+
+            // explore v's edges
+
+            printf("thread %d exploring %d \n", t, v);
+
             for (j = ver[v]; j < ver[v+1]; j++) {
                 w = edges[j];
-                if (p[w] == -1) { // add unvisited nodes to the next queue
+
+                // found vertex w
+
+                if (p[w] == -1) {
                     p[w] = v;
                     dist[w] = dist[v] +1;
-                    T[offset + T[0]++] = w;
+
+                    // add w to local T
+
+                    local_T[local_counter++] = w;
                 }
             }
+
+            // store local counter in T + offset
+
+            T[i + offset] = local_counter;
+
+#pragma omp critical
+            {
+                printf("thread %d found: ", t);
+                show(local_T, local_counter);
+            }
         }
-        printf("\n");
-        temp = S;
-        S = T;
-        T = temp;
-        T[0] = 0;
-        printf("queue: ");
-        for (i = 0; i < S[0]; i++) printf("%d ", S[i + offset]);
-        printf("\n");
-    }
 
 #pragma omp barrier
 
+        // all vertieces in S have been moved to private Ts
+
+        // do the prefix sums to find out where each thread may place elements
+        // and find the total size of the next S
+
+#pragma omp single
+        {
+            // reset size of S and number of elements found
+            T[0] = 0;
+            T[1] = 0;
+
+            // sum all local counters. this will be the next size of S
+            for (i = 0; i < ts; i++) {
+                T[0] += T[i + offset];
+            }
+
+            // find last write index for each thread
+            for (i = 1; i < ts; i++) {
+                T[i + offset] += T[i - 1 + offset];    
+            }
+        }
+
+#pragma omp barrier
+
+
+        // each thread moves its elements to S
+
+        // printf("thread %d counter: %d\n", t, local_counter);
+
+#pragma omp for
+        for (i = 0; i < ts; i++) {
+
+
+            k = T[i + offset] - local_counter;
+
+            for (j = 0; j < local_counter; j++) {
+                S[k++] = local_T[j];
+            }
+
+            // reset counter in T
+            
+            T[i + offset] = 0;
+
+        }
+
+#pragma omp barrier
+#pragma omp single
+
+        {
+
+            printf("queue: ");
+            show(S, T[0]);
+
+        }
+#pragma omp barrier
+        if (iteration == 3) {
+            return;
+        }
+    }
+
+    free(local_T);
+
+#pragma omp barrier
 }
 
+
+void show(int *arr, int size)
+{
+    int i;
+    for (i = 0; i < size; i++) {
+        printf("%d ", arr[i]);
+    }
+    printf("\n");
+}
