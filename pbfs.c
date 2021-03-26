@@ -40,12 +40,12 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     int offset;
     int local_counter;
     int *local_T;
-    int thread, num_threads;
 
     offset = 2;
     local_T = (int*) malloc(n * sizeof(int));
-    thread = omp_get_thread_num();
-    num_threads = omp_get_num_threads();
+
+    const int thread = omp_get_thread_num();
+    const int num_threads = omp_get_num_threads();
 
 #pragma omp single
     {
