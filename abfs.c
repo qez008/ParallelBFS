@@ -40,11 +40,14 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     int depth = 0;
     int break_depth = 10;
 
+    int *single_T;
+    single_T = (int*) malloc(n * sizeof(int));
+
 #pragma omp single
 
     {
-        int *single_T;
-        single_T = (int*) malloc(n * sizeof(int));
+        printf("single bfs performed by thread %d\n", omp_get_thread_num());
+
 
         for(i = 1; i <= n; i++) {   // Set that every node is unvisited
             p[i] = -1;              // Using -1 to mark that a vertex is unvisited
@@ -83,8 +86,7 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
             single_T[0] = 0;
         }
         
-        //printf("single bfs done\n");
-        free(single_T);
+        printf("single bfs done\n");
 
         // move elements to shared T because pointer to S has switched
         for (i = 0; i < offset + S[0]; i++) {
@@ -93,6 +95,8 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     }
 
 #pragma omp barrier
+
+    //free(single_T);
 
     ibfs(n, ver, edges, p, dist, T, offset);
 }
@@ -133,7 +137,7 @@ void ibfs(int n, int *ver, int *edges, int *p, int *dist, int *S, const int offs
 
     k = 0;
     while (S[0] != 0) {
-        printf("thread %d depth: %d\n", tid, k++);
+        //printf("thread %d depth: %d\n", tid, k++);
 
         for (i = 0; i < num_r; i++) {
             k++;
