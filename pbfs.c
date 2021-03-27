@@ -37,15 +37,16 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     int v, w;
     int *temp;
 
-    int offset;
     int local_counter;
     int *local_T;
 
-    offset = 2;
     local_T = (int*) malloc(n * sizeof(int));
 
     const int thread = omp_get_thread_num();
     const int num_threads = omp_get_num_threads();
+
+    // points to the starting index in S and T (shared values are stored before this)
+    const int offset = 2; 
 
 #pragma omp single
     {
@@ -69,7 +70,7 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
 
         local_counter = 0;
 
-        // move all neighbors of of vertices in S to local Ts in parallel
+        // move all neighbors of vertices in S to local Ts in parallel
 
 #pragma omp for
         for (i = 0; i < S[0]; i++) {
@@ -82,8 +83,9 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
                     local_T[local_counter++] = w;
                 }
             }
-            T[offset + thread] = local_counter;
         }
+
+        T[offset + thread] = local_counter;
 
 #pragma omp barrier
 
