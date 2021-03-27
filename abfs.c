@@ -1,4 +1,3 @@
-
 // Parallel Breadth First Search
 // -----------------------------
 // Berforms a BFS starting from vertex 1
@@ -24,152 +23,162 @@
 //
 // Note that the vertices are numbered from 1 to n (inclusive). Thus there is
 // no vertex 0.
-void individual_bfs(int n, int *ver, int *edges, int *p, int *dist, int *local_S, int size);
 void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
 {
-    int i, j, k;
-    int v, w;
+    // write code here
 
-    int local_counter;
-    int *local_T;
+    int i, j;         // Loop indices
+    int v, w;         // Pointers to vertices
+    int *temp;        // Temporary pointer
 
-    const int thread = omp_get_thread_num();
-    const int num_threads = omp_get_num_threads();
+    const int offset = 2;
 
-    const int offset = 2;   // points to the starting index in S and T 
-                            // (shared values are stored before this)
 
-    int depth = 1;
+    // reqular bfs. code from sbfs exectued by a single thread.
+    // when desired depth is reach split the search between threads.
 
-    local_T = (int*) malloc(n * sizeof(int));
+    int depth = 0;
 
 #pragma omp single
+
     {
-        for (i = 1; i <= n; i++) {
-            p[i] = -1;
+        for(i = 1; i <= n; i++) {   // Set that every node is unvisited
+            p[i] = -1;              // Using -1 to mark that a vertex is unvisited
             dist[i] = -1;
         }
 
-        p[1] = 1;
-        dist[1] = 0;
-        S[offset] = 1;
+        p[1] = 1;        // Set the parent of starting vertex to itself
+        dist[1] = 0;     // Set the distance from the starting vertex to itself
+        S[offset] = 1;   // Add the starting vertex to S
 
-        S[0] = 1;
-        S[1] = 0;
+        S[0] = 1;        // Number of vertices in S
+        T[0] = 0;        // Number of vertices in T
+
+        while (S[0] != 0) {                            // Loop until all vertices have been discovered
+            depth++;
+            if (depth > 10) break;
+
+            for (i = 0; i < S[0]; i++) {               // Loop over vertices in S
+                v = S[offset + i];                      // Grab next vertex v in S
+                for (j = ver[v]; j < ver[v + 1]; j++) {   // Go through the neighbors of v
+                    w = edges[j];               // Get next neighbor w of v
+                    if (p[w] == -1) {           // Check if w is undiscovered
+                        p[w] = v;               // Set v as the parent of w
+                        dist[w] = dist[v] + 1;  // Set distance of w 
+                        T[offset + T[0]++] = w; // Add w to T and increase number of vertices discovered 
+                    }
+                }  // End loop over neighbors of v
+            }  // End loop of vertices in S
+            temp = S;  // Swap S and T
+            S = T;
+            T = temp;
+            T[0] = 0;
+        }
     }
 
 
-    while (S[0] != 0) {
 
-        depth++;
-        local_counter = 0;
+#pragma omp single nowait
+    { printf("splitting search, S size: %d\n", S[0]); }
 
-        if (depth == 10) {  // once search reaches desired depth, break out of the
-            break;          // while loop and contiune the search individually
+    int *local_S = (int*) malloc(n * sizeof(int));
+    int *local_T = (int*) malloc(n * sizeof(int));
+
+    const int tid = omp_get_thread_num();
+    const int num_t = omp_get_num_threads();
+
+    int num_r, num_w;
+
+    // split vertices in S evenly between threads
+
+    for (i = tid; i < S[0]; i += num_t) {
+        local_S[num_r++] = S[offset + i];
+    }
+#pragma omp barrier
+
+    // explore local vertices
+
+    // first two indices in S are used for a custom barrier
+
+#pragma omp single
+    {
+        T[0] = num_t;   // first lock
+        T[1] = 0;       // first counter
+        T[2] = true;
+
+        S[0] = num_t;   // second lock 
+        S[1] = 0;       // second counter
+        S[2] = true;
+    }
+
+    while (num_r != 0) {
+
+        // entry point
+#pragma omp critical
+        {
+            S[1]++;
+            printf("tid %d hit entry. (%d/%d)\n", tid, S[1], S[0]);
+            if (S[1] == S[0]) {     // when the last thread arrives
+                T[1] = 0;           // reset the other counter 
+                T[2] = true;        // raise other barrier
+                S[2] = false;       // release this barrier
+            }
         }
+        while(S[2]); // wait
 
-        // move all neighbors of vertices in S to local Ts in parallel
+        printf("tid %d passed entry\n", tid);
 
-#pragma omp for
-        for (i = 0; i < S[0]; i++) {
-            v = S[offset + i];
+        for (i = 0; i < num_r; i++) {
+            v = local_S[i];
             for (j = ver[v]; j < ver[v+1]; j++) {
                 w = edges[j];
                 if (p[w] == -1) {
                     p[w] = v;
                     dist[w] = dist[v] + 1;
-                    local_T[local_counter++] = w;
-                }
+                    local_T[num_w++] = w;
+                } 
             }
         }
 
-        T[offset + thread] = local_counter;
-
-#pragma omp barrier
-
-        // find the next size of S
-
-#pragma omp single
-        { 
-            S[0] = 0; 
-            for (i = 0; i < num_threads; i++) {
-                S[0] += T[offset + i];
-            }
-
-            // prefix sum last index for each thread
-
-            for (i = 1; i < num_threads; i++) {
-                T[offset + i] += T[offset + i - 1];
-            }
-
-        }
-
-        // each thread moves elements from local Ts to S
-
-
-        k = T[offset + thread] - local_counter;     // find start index for this thread
-        for (i = 0; i < local_counter; i++) {
-            S[offset + k++] = local_T[i];
-        }
-
-        // reset local size in T
-
-        T[offset + thread] = 0;
-#pragma omp barrier
-
-    } // end while
-
-
-    if (S[0] != 0) {    // S[0] is only zero if search finished before it reached split depth
-
-#pragma omp single
-        { printf("broke loop at depth: %d, S size: %d\n", depth, S[0]); }
-
-        // share S evenly between threads
-
-        local_counter = 0;
-        for (i = thread; i < S[0]; i += num_threads) {
-            local_T[local_counter++] = S[i];
-        }
-
-        // each thread exhausts its local T
-
-        individual_bfs(n, ver, edges, p, dist, local_T, local_counter);
-    }
-}
-
-
-void individual_bfs(int n, int *ver, int *edges, int *p, int *dist, int *local_S, int size)
-{
-    int i, j, k;
-    int v, w;
-    int *local_T;
-    int *temp;
-    int writes;
-    
-    local_T = (int*) malloc(n * sizeof(int));
-    
-    while (size != 0) {
-        for (i = 0; i < size; i++) {
-            v = local_S[i];
-            k = dist[v] + 1;
-            for (j = ver[v]; j < ver[v+1]; j++) {
-                w = edges[j];
-                if (p[w] == -1) {
-                    p[w] = v;
-                    dist[w] = k;
-                    local_T[writes++] = w;
-                }
-            }
-        }
         temp = local_S;
         local_S = local_T;
         local_T = temp;
+        num_r = num_w;
+        num_w = 0;
 
-        size = writes;
-        writes = 0;
+
+
+        // exit point
+#pragma omp critical
+        {
+            printf("tid %d hit exit. (%d/%d)\n", tid, T[1], T[0]);
+            T[1]++;
+            if (T[1] == T[0]) {
+                S[1] = 0;       // reset first counter
+                S[2] = true;    // raise first barrier
+                T[2] = false;   // relase this barrier
+            }
+        }
+        while(T[2]); // wait
+
+
+    }
+    // last barrier
+#pragma omp critical
+    {
+        printf("tid %d hit final barrier\n", tid);
+        S[0]--;
+        T[0]--;
+        if (S[1] == S[0]) {
+            T[1] = 0;           // last thread to arrive resets the ohter counter
+            T[2] = true;
+            S[2] = false;
+            printf("tid %d done\n", tid);
+        }
     }
 
     free(local_S);
     free(local_T);
+
 }
+
