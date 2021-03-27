@@ -23,6 +23,7 @@
 //
 // Note that the vertices are numbered from 1 to n (inclusive). Thus there is
 // no vertex 0.
+void ibfs(int n, int *ver, int *edges, int *p, int *dist, int *S, const int offset);
 void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
 {
     // write code here
@@ -33,15 +34,18 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
 
     const int offset = 2;
 
-
     // reqular bfs. code from sbfs exectued by a single thread.
     // when desired depth is reach split the search between threads.
 
     int depth = 0;
+    int break_depth = 10;
 
 #pragma omp single
 
     {
+        int *single_T;
+        single_T = (int*) malloc(n * sizeof(int));
+
         for(i = 1; i <= n; i++) {   // Set that every node is unvisited
             p[i] = -1;              // Using -1 to mark that a vertex is unvisited
             dist[i] = -1;
@@ -52,11 +56,14 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
         S[offset] = 1;   // Add the starting vertex to S
 
         S[0] = 1;        // Number of vertices in S
-        T[0] = 0;        // Number of vertices in T
+        single_T[0] = 0;        // Number of vertices in T
 
         while (S[0] != 0) {                            // Loop until all vertices have been discovered
             depth++;
-            if (depth > 10) break;
+            if (depth >= break_depth) {
+                //printf("reached break depth of %d\n", break_depth);
+                break;
+            }
 
             for (i = 0; i < S[0]; i++) {               // Loop over vertices in S
                 v = S[offset + i];                      // Grab next vertex v in S
@@ -65,21 +72,40 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
                     if (p[w] == -1) {           // Check if w is undiscovered
                         p[w] = v;               // Set v as the parent of w
                         dist[w] = dist[v] + 1;  // Set distance of w 
-                        T[offset + T[0]++] = w; // Add w to T and increase number of vertices discovered 
+                        // Add w to T and increase number of vertices discovered 
+                        single_T[offset + single_T[0]++] = w; 
                     }
                 }  // End loop over neighbors of v
             }  // End loop of vertices in S
             temp = S;  // Swap S and T
-            S = T;
-            T = temp;
-            T[0] = 0;
+            S = single_T;
+            single_T = temp;
+            single_T[0] = 0;
+        }
+        
+        //printf("single bfs done\n");
+        free(single_T);
+
+        // move elements to shared T because pointer to S has switched
+        for (i = 0; i < offset + S[0]; i++) {
+            T[i] = S[i];
         }
     }
 
+#pragma omp barrier
+
+    ibfs(n, ver, edges, p, dist, T, offset);
+}
 
 
-#pragma omp single nowait
-    { printf("splitting search, S size: %d\n", S[0]); }
+// synced individual bfs
+void ibfs(int n, int *ver, int *edges, int *p, int *dist, int *S, const int offset)
+{
+    int i, j, k;
+    int v, w;
+    int *temp;
+
+#pragma omp barrier
 
     int *local_S = (int*) malloc(n * sizeof(int));
     int *local_T = (int*) malloc(n * sizeof(int));
@@ -94,41 +120,23 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     for (i = tid; i < S[0]; i += num_t) {
         local_S[num_r++] = S[offset + i];
     }
-#pragma omp barrier
 
-    // explore local vertices
-
-    // first two indices in S are used for a custom barrier
-
-#pragma omp single
+#pragma omp critical
     {
-        T[0] = num_t;   // first lock
-        T[1] = 0;       // first counter
-        T[2] = true;
-
-        S[0] = num_t;   // second lock 
-        S[1] = 0;       // second counter
-        S[2] = true;
+        printf("thread %d: ", tid);
+        for (i = 0; i < num_r; i++)
+            printf("%d ", local_S[i]);
+        printf("\n");
     }
 
-    while (num_r != 0) {
+#pragma omp barrier
 
-        // entry point
-#pragma omp critical
-        {
-            S[1]++;
-            printf("tid %d hit entry. (%d/%d)\n", tid, S[1], S[0]);
-            if (S[1] == S[0]) {     // when the last thread arrives
-                T[1] = 0;           // reset the other counter 
-                T[2] = true;        // raise other barrier
-                S[2] = false;       // release this barrier
-            }
-        }
-        while(S[2]); // wait
-
-        printf("tid %d passed entry\n", tid);
+    k = 0;
+    while (S[0] != 0) {
+        printf("thread %d depth: %d\n", tid, k++);
 
         for (i = 0; i < num_r; i++) {
+            k++;
             v = local_S[i];
             for (j = ver[v]; j < ver[v+1]; j++) {
                 w = edges[j];
@@ -146,39 +154,20 @@ void abfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
         num_r = num_w;
         num_w = 0;
 
-
-
-        // exit point
+#pragma omp barrier
+#pragma omp single
+        { S[0] = 0; }
+#pragma omp barrier
 #pragma omp critical
-        {
-            printf("tid %d hit exit. (%d/%d)\n", tid, T[1], T[0]);
-            T[1]++;
-            if (T[1] == T[0]) {
-                S[1] = 0;       // reset first counter
-                S[2] = true;    // raise first barrier
-                T[2] = false;   // relase this barrier
-            }
-        }
-        while(T[2]); // wait
+        { S[0] += num_r; }
+#pragma omp barrier
 
-
-    }
-    // last barrier
-#pragma omp critical
-    {
-        printf("tid %d hit final barrier\n", tid);
-        S[0]--;
-        T[0]--;
-        if (S[1] == S[0]) {
-            T[1] = 0;           // last thread to arrive resets the ohter counter
-            T[2] = true;
-            S[2] = false;
-            printf("tid %d done\n", tid);
-        }
     }
 
     free(local_S);
     free(local_T);
+    printf("thread %d done, explored %d vertices\n", tid, k);
 
+#pragma omp barrier
 }
 
