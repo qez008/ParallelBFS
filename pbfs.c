@@ -1,9 +1,3 @@
-
-void alt1(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T);
-void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T);
-
-void show(int* arr, int size);
-
 // Parallel Breadth First Search
 // -----------------------------
 // Berforms a BFS starting from vertex 1
@@ -26,14 +20,7 @@ void show(int* arr, int size);
 // no vertex 0.
 void pbfs(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
 {
-    // Write code here
-    alt2(n, ver, edges, p, dist, S, T);
-}
-
-
-void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T) 
-{
-    int i, j, k, t;
+    int i, j, k;
     int v, w;
     int *temp;
 
@@ -46,12 +33,10 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
     const int num_threads = omp_get_num_threads();
 
     // points to the starting index in S and T (shared values are stored before this)
-    const int offset = 2; 
+    const int offset = 2;
 
 #pragma omp single
     {
-        printf("--alt2--\n");
-
         for (i = 1; i <= n; i++) {
             p[i] = -1;
             dist[i] = -1;
@@ -92,16 +77,16 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
         // find the next size of S
 
 #pragma omp single
-        { 
-            S[0] = 0; 
-            for (t = 0; t < num_threads; t++) {
-                S[0] += T[offset + t];
+        {
+            S[0] = 0;
+            for (i = 0; i < num_threads; i++) {
+                S[0] += T[offset + i];
             }
 
             // prefix sum last index for each thread
 
-            for (t = 1; t < num_threads; t++) {
-                T[offset + t] += T[offset + t - 1];
+            for (i = 1; i < num_threads; i++) {
+                T[offset + i] += T[offset + i - 1];
             }
 
         }
@@ -109,7 +94,6 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
         // each thread moves elements from local Ts to S
 
 
-        // find start index for thread t
         k = T[offset + thread] - local_counter;
         for (i = 0; i < local_counter; i++) {
             S[offset + k++] = local_T[i];
@@ -118,20 +102,15 @@ void alt2(int n, int *ver, int *edges, int *p, int *dist, int *S, int *T)
         // reset local counter in T
 
         T[offset + thread] = 0;
+
 #pragma omp barrier
 
     } // end while
 
 
     free(local_T);
+
+#pragma omp barrier
+
 }
 
-
-void show(int *arr, int size)
-{
-    int i;
-    for (i = 0; i < size; i++) {
-        printf("%d ", arr[i]);
-    }
-    printf("\n");
-}
